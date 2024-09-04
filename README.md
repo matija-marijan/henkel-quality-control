@@ -1,2 +1,2 @@
-# henkel-quality-control
-Quality control of sanitary toilet balls
+# Henkel quality control automation
+Quality control of sanitary toilet balls with Segment Anything Model.
