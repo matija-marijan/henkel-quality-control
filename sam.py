@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import cv2
+import csv
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 import warnings
 warnings.filterwarnings("ignore")
@@ -9,60 +9,50 @@ from utils import *
 
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 SAM_CHECKPOINT = "./model/sam_vit_b_01ec64.pth"
+DATASET_DIR = "./dataset/"
 
 sam = sam_model_registry["vit_b"](checkpoint = SAM_CHECKPOINT)
 sam.to(device = DEVICE)
-
-# IMAGE_PATH = "./Dataset/pune (25).bmp"
-# IMAGE_PATH = "./Dataset/pune (49).bmp"
-# IMAGE_PATH = "./Dataset/pune (85).bmp"
-# IMAGE_PATH = "./Dataset/pune (93).bmp"
-# IMAGE_PATH = "./Dataset/pune (142).bmp"
-# IMAGE_PATH = "./Dataset/pune (377).bmp"
-IMAGE_PATH = "./Dataset/pune (383).bmp"
-# IMAGE_PATH = "./Dataset/prazna (1).bmp"
-
-image = cv2.imread(IMAGE_PATH)
-image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-# plt.figure(figsize=(8, 8))
-# plt.imshow(image)
-# plt.axis('off')
-# plt.show()
+print("Model loaded successfully.")
 
 mask_generator = SamAutomaticMaskGenerator(
     model = sam,
     min_mask_region_area=250,
-    # points_per_side = 4,
     pred_iou_thresh = 0.9,
-    stability_score_thresh = 0.9
-)   
+    stability_score_thresh = 0.9)
+print("Mask generator initialized successfully.")
 
-masks = mask_generator.generate(image)
-# print(masks)
-# print(len(masks))
+dataset = ImageDataset(DATASET_DIR)
+results = []
+print(f"Dataset loaded successfully. Processing {len(dataset)} images...")
 
-# plt.figure(figsize=(8, 8))
-# plt.imshow(image)
-# show_anns(masks)
-# plt.axis('off')
-# plt.show() 
+for idx in range(len(dataset)):
 
-best_ball = select_best_ball(masks, image.shape[1], image.shape[0], image)
+    print(f"Processing image {idx + 1}/{len(dataset)}...")
+    image, image_name = dataset[idx]
 
-if best_ball:
-    print(f"Best ball found:, area: {best_ball['area']}, bbox: {best_ball['bbox']}, iou: {best_ball['predicted_iou']}, stability: {best_ball['stability_score']}")
     plt.figure(figsize=(8, 8))
     plt.imshow(image)
-    show_anns([best_ball])
     plt.axis('off')
-    plt.show() 
+    plt.title(image_name)
+    plt.show()
+    
+    masks = mask_generator.generate(image)
+    result = analyze_masks(masks, image)
 
-    # Quality (cracks, containment, blemishes, deformities)
-    results = analyze_ball(best_ball, image, masks)
-    print(results)
+    results.append((image_name, result))
+    status = "PASS" if result == 1 else "FAIL"
 
-else:
-    print("No ball found in the image.")
+    print(f"Processed image {idx + 1}/{len(dataset)}: {status}")
+
+print("All images processed successfully. Saving results to a CSV file...")
+# Save results to a CSV file
+csv_file = "results.csv"
+with open(csv_file, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Image Name", "Quality result"])  # Write the header
+    writer.writerows(results)  # Write the data
+print(f"Results saved to {csv_file}")
 
 '''
 Test if there is a foreground
@@ -74,17 +64,3 @@ Check if mask has color blemishes
 Check if mask has irregularities
 
 '''
-
-
-# plt.figure(figsize=(16, 8))
-# # Display the original image
-# plt.subplot(1, 2, 1)
-# plt.imshow(image)
-# plt.title('Original Image')
-# plt.axis('off')
-# # Display the best mask
-# plt.subplot(1, 2, 2)
-# show_anns(masks)
-# plt.title('All masks')
-# plt.axis('off')
-# plt.show()
