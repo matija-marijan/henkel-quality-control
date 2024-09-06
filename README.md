@@ -1,2 +1,2 @@
 # Henkel quality control automation
-Quality control of sanitary toilet balls with Segment Anything Model.
+Unsupervised quality control of sanitary toilet balls using the Segment Anything Model (https://github.com/facebookresearch/segment-anything).
