@@ -35,7 +35,8 @@ for idx in range(len(dataset)):
     plt.imshow(image)
     plt.axis('off')
     plt.title(image_name)
-    plt.show()
+    plt.waitforbuttonpress()
+    plt.close()
     
     masks = mask_generator.generate(image)
     result = analyze_masks(masks, image)
