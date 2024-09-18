@@ -31,22 +31,26 @@ for idx in range(len(dataset)):
     print(f"Processing image {idx + 1}/{len(dataset)}...")
     image, image_name = dataset[idx]
 
+    masks = mask_generator.generate(image)
+
     plt.figure(figsize=(8, 8))
     plt.imshow(image)
     plt.axis('off')
     plt.title(image_name)
+    # show_anns(masks)
     plt.waitforbuttonpress()
     plt.close()
     
-    masks = mask_generator.generate(image)
-    result = analyze_masks(masks, image)
+    # result = analyze_masks(masks, image)
+    result = check_masks(masks, image)
 
     results.append((image_name, result))
     status = "PASS" if result == 1 else "FAIL"
 
-    print(f"Processed image {idx + 1}/{len(dataset)}: {status}")
+    print(f"Image {idx + 1}/{len(dataset)}: {status}")
 
 print("All images processed successfully. Saving results to a CSV file...")
+
 # Save results to a CSV file
 csv_file = "results.csv"
 with open(csv_file, mode='w', newline='') as file:
