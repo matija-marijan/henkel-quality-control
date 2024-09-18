@@ -42,6 +42,15 @@ def show_anns(anns, alpha=0.5):
         img[m] = color_mask
     ax.imshow(img)
 
+def show_best_ball(image, best_ball):
+    plt.figure(figsize=(8, 8))
+    plt.imshow(image)
+    show_anns([best_ball])
+    plt.title('Best Ball')
+    plt.axis('off')
+    plt.waitforbuttonpress()
+    plt.close()
+
 def is_centered(bbox, image_width, image_height, tolerance=0.25):
     x, y, w, h = bbox
     bbox_center_x = x + w / 2
@@ -153,7 +162,6 @@ def detect_cracks(mask, image):
 def show_cracks(image, cracks):
 
     if cracks:
-        print(cracks)
         img_overlay = np.copy(image)
 
         plt.figure(figsize=(8, 8))
@@ -197,7 +205,7 @@ def show_contained_masks(image, contained_masks):
     """
     Plot the best ball mask and any contained masks on the original image.
     """
-    if contained_masks is not None:
+    if contained_masks:
         # Create a copy of the image with alpha channel for overlays
         img_overlay = np.concatenate([image, np.ones_like(image[:, :, 0:1])], axis=2)  # Add alpha channel
 
@@ -228,37 +236,38 @@ def detect_deformities(mask):
         contour_area = cv2.contourArea(contours[0])
         
         # Compare convex hull area to contour area (a big difference might indicate a deformity)
-        if hull_area / contour_area > 1.2:  # Adjust threshold as needed
+        if hull_area / contour_area > 1.25:  # Adjust threshold as needed
             return True  # Detected a potential deformity
     
     return False  # No deformity detected
 
-def show_deformities(image, mask, deformities=False):
+def show_deformities(image, mask, deformities):
     """
     Show the cracks, blemishes, and deformities detected in the image.
     """
-    img_overlay = np.copy(image)
-
-    # Prepare the figure
-    plt.figure(figsize=(8, 8))
-    ax = plt.gca()
-    ax.imshow(image)
-    ax.set_title("Deformities (Blue)")
-
-    # Draw the ball mask contour (white)
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(img_overlay, contours, -1, (255, 255, 255), 2)
-
-    # Highlight deformities in blue
     if deformities:
+        img_overlay = np.copy(image)
+
+        # Prepare the figure
+        plt.figure(figsize=(8, 8))
+        ax = plt.gca()
+        ax.imshow(image)
+        ax.set_title("Deformities (Blue)")
+
+        # Draw the ball mask contour (white)
+        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img_overlay, contours, -1, (255, 255, 255), 2)
+
+        # Highlight deformities in blue
+        
         hull = cv2.convexHull(contours[0])
         cv2.drawContours(img_overlay, [hull], -1, (0, 0, 255), 2)  # Blue for deformities
 
-    # Display the updated image
-    ax.imshow(img_overlay)
-    plt.axis('off')
-    plt.waitforbuttonpress()
-    plt.close()
+        # Display the updated image
+        ax.imshow(img_overlay)
+        plt.axis('off')
+        plt.waitforbuttonpress()
+        plt.close()
 
     check_convexity(mask)
 
@@ -267,46 +276,49 @@ def check_convexity(segmentation):
     contours, _ = cv2.findContours(segmentation.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if len(contours) > 0:
-            # Create an empty image to draw everything on (uint8 type, with 3 channels for color)
-            combined_img = np.zeros((segmentation.shape[0], segmentation.shape[1], 3), dtype=np.uint8)
+        # Create an empty image to draw everything on (uint8 type, with 3 channels for color)
+        combined_img = np.zeros((segmentation.shape[0], segmentation.shape[1], 3), dtype=np.uint8)
 
-            # Draw the contour
-            cv2.drawContours(combined_img, contours, 0, (0, 255, 0), 2)  # Green for contours
+        # Draw the contour
+        cv2.drawContours(combined_img, contours, 0, (0, 255, 0), 2)  # Green for contours
 
-            # Draw the convex hull
-            hull = cv2.convexHull(contours[0], returnPoints=True)
-            cv2.drawContours(combined_img, [hull], 0, (255, 0, 0), 2)  # Red for hull
+        # Draw the convex hull
+        hull = cv2.convexHull(contours[0], returnPoints=True)
+        cv2.drawContours(combined_img, [hull], 0, (255, 0, 0), 2)  # Red for hull
 
-            # Draw the convexity defects
-            hull_indices = cv2.convexHull(contours[0], returnPoints=False)
-            defects = cv2.convexityDefects(contours[0], hull_indices)
+        # Draw the convexity defects
+        hull_indices = cv2.convexHull(contours[0], returnPoints=False)
+        defects = cv2.convexityDefects(contours[0], hull_indices)
 
-            depth_threshold = 10  # Minimum depth to consider a defect as large
-            length_threshold = 10  # Minimum length of defect to consider
+        depth_threshold = 10  # Minimum depth to consider a defect as large
+        length_threshold = 10  # Minimum length of defect to consider
 
-            if defects is not None:
-                for i in range(defects.shape[0]):
-                    s, e, f, d = defects[i, 0]
-                    start = tuple(contours[0][s][0])
-                    end = tuple(contours[0][e][0])
-                    far = tuple(contours[0][f][0])
+        plot_defects = False
+        if defects is not None:
+            for i in range(defects.shape[0]):
+                s, e, f, d = defects[i, 0]
+                start = tuple(contours[0][s][0])
+                end = tuple(contours[0][e][0])
+                far = tuple(contours[0][f][0])
 
-                    # Calculate the length of the defect
-                    length = np.linalg.norm(np.array(start) - np.array(end))
+                # Calculate the length of the defect
+                length = np.linalg.norm(np.array(start) - np.array(end))
 
-                    # Filter based on depth and length
-                    if (d / 256.0) > depth_threshold and length > length_threshold:
-                        print(f"Defect: depth={d / 256.0}, length={length}")
-                        cv2.line(combined_img, start, end, (0, 0, 255), 2)  # Red for large defects lines
-                        cv2.circle(combined_img, far, 5, (255, 0, 0), -1)  # Blue for large defects points
-
-            # Plotting
-            plt.figure(figsize=(8, 8))
-            plt.title('Contours, Convex Hull, and Convexity Defects')
-            plt.imshow(combined_img)
-            plt.axis('off')  # Hide the axis
-            plt.waitforbuttonpress()
-            plt.close()
+                # Filter based on depth and length
+                if (d / 256.0) > depth_threshold and length > length_threshold:
+                    plot_defects = True
+                    print(f"Defect: depth={d / 256.0}, length={length}")
+                    cv2.line(combined_img, start, end, (0, 0, 255), 2)  # Red for large defects lines
+                    cv2.circle(combined_img, far, 5, (255, 0, 0), -1)  # Blue for large defects points
+            
+            if plot_defects:
+                # Plotting
+                plt.figure(figsize=(8, 8))
+                plt.title('Contours, Convex Hull, and Convexity Defects')
+                plt.imshow(combined_img)
+                plt.axis('off')  # Hide the axis
+                plt.waitforbuttonpress()
+                plt.close()
 
 def analyze_ball(best_candidate, image, masks):
     segmentation = best_candidate['segmentation']
@@ -315,6 +327,7 @@ def analyze_ball(best_candidate, image, masks):
     contained_masks = detect_contained_masks(best_candidate, masks)
     deformities = detect_deformities(segmentation)
 
+    show_best_ball(image, best_candidate)
     show_cracks(image, cracks)
     show_contained_masks(image, contained_masks)
     show_deformities(image, segmentation, deformities)
@@ -330,15 +343,6 @@ def analyze_masks(masks, image):
 
     if best_ball:
         print(f"Best ball found: area: {best_ball['area']}, bbox: {best_ball['bbox']}, iou: {best_ball['predicted_iou']}, stability: {best_ball['stability_score']}")
-        
-        plt.figure(figsize=(8, 8))
-        plt.imshow(image)
-        show_anns([best_ball])
-        plt.title('Best Ball')
-        plt.axis('off')
-        plt.waitforbuttonpress()
-        plt.close()
-        # plt.show()
         
         results = analyze_ball(best_ball, image, masks)
         print(results)
