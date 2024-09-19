@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from torch.utils.data import Dataset
+import math
 
 class ImageDataset(Dataset):
     def __init__(self, dataset_dir, transform=None):
@@ -67,7 +68,7 @@ def is_centered(bbox, image_width, image_height, tolerance=0.25):
 
     return flag, score
 
-def circularity(segmentation, tolerance=0.15):
+def circularity(segmentation, tolerance=0.1):
     contours, _ = cv2.findContours(segmentation.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if len(contours) > 0:
         perimeter = cv2.arcLength(contours[0], True)
@@ -139,10 +140,27 @@ def select_best_ball(sam_masks, image_width, image_height):
 
     return best_candidate
 
+def adaptive_canny(image, sigma1=0.66, sigma2 = 0.33):
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Compute the median of the pixel intensities
+    v = np.median(gray)
+
+    # Apply adaptive thresholds using the median
+    lower = int(max(0, (1.0 - sigma1) * v))
+    upper = int(min(255, (1.0 - sigma2) * v))
+
+    # Apply Canny edge detection
+    edges = cv2.Canny(gray, lower, upper)
+
+    return edges
+
 def detect_cracks(mask, image):
-    # Use Canny edge detection to highlight potential cracks
-    edges = cv2.Canny(image, 50, 100)
-    
+    # Use adaptive Canny edge detection to highlight potential cracks
+    edges = adaptive_canny(image)
+    # edges = cv2.Canny(image, 50, 100)
+
     # Mask the edges to the ball region only
     masked_edges = cv2.bitwise_and(edges, edges, mask=mask.astype(np.uint8))
     
@@ -156,11 +174,13 @@ def detect_cracks(mask, image):
         if perimeter > 250:  # You can adjust this threshold
             # A long edge might indicate a crack
             cracks.append(contour)
-    
+    if cracks:
+        print(f"{len(cracks)} cracks found with perimeters: {[cv2.arcLength(crack, True) for crack in cracks]}")
     return cracks
 
 def check_cracks(mask, image):
-    edges = cv2.Canny(image, 50, 100)
+    edges = adaptive_canny(image)
+    # edges = cv2.Canny(image, 50, 100)
     masked_edges = cv2.bitwise_and(edges, edges, mask=mask.astype(np.uint8))
     contours, _ = cv2.findContours(masked_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for contour in contours:
@@ -208,7 +228,8 @@ def detect_contained_masks(best_mask, other_masks):
 
                 if other_mask['area'] > min_area:
                     contained_masks.append(other_mask)
-    
+    if contained_masks:
+        print(f"{len(contained_masks)} masks contained within the best mask with areas: {[mask['area'] for mask in contained_masks]}")
     return contained_masks
 
 def check_contained_masks(best_mask, other_masks):
@@ -251,27 +272,31 @@ def show_contained_masks(image, contained_masks):
         plt.close()
 
 def detect_deformities(mask):
-    # Calculate convex hull and compare it to the contour
+    # Calculate minimum enclosing circle and compare it to the contour
     contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     if len(contours) > 0:
-        hull = cv2.convexHull(contours[0])
-        hull_area = cv2.contourArea(hull)
+        # hull = cv2.convexHull(contours[0])
+        (_, _), radius = cv2.minEnclosingCircle(contours[0])
+        circle_area = math.pi * (radius ** 2)
+
+        # hull_area = cv2.contourArea(hull)
         contour_area = cv2.contourArea(contours[0])
         
         # Compare convex hull area to contour area (a big difference might indicate a deformity)
-        if hull_area / contour_area > 1.25:  # Adjust threshold as needed
+        if circle_area / contour_area > 1.075:  # Adjust threshold as needed
+            print("Potential deformity detected with area ratio: ", circle_area / contour_area)
             return True  # Detected a potential deformity
-    
+        
     return False  # No deformity detected
 
 def check_deformities(mask):
     contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if len(contours) > 0:
-        hull = cv2.convexHull(contours[0])
-        hull_area = cv2.contourArea(hull)
+        (_, _), radius = cv2.minEnclosingCircle(contours[0])
+        circle_area = math.pi * (radius ** 2)
         contour_area = cv2.contourArea(contours[0])
-        if hull_area / contour_area > 1.25:
+        if circle_area / contour_area > 1.075:
             return False
     return True
 
@@ -286,16 +311,17 @@ def show_deformities(image, mask, deformities):
         plt.figure(figsize=(8, 8))
         ax = plt.gca()
         ax.imshow(image)
-        ax.set_title("Deformities (Blue)")
+        ax.set_title("Contour (White), Enclosing Circle (Blue)")
 
         # Draw the ball mask contour (white)
         contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(img_overlay, contours, -1, (255, 255, 255), 2)
 
-        # Highlight deformities in blue
-        
-        hull = cv2.convexHull(contours[0])
-        cv2.drawContours(img_overlay, [hull], -1, (0, 0, 255), 2)  # Blue for deformities
+        # Highlight enclosing circle in blue
+        (x_axis, y_axis), radius = cv2.minEnclosingCircle(contours[0]) 
+        center = (int(x_axis), int(y_axis)) 
+        radius = int(radius)
+        cv2.circle(img_overlay, center, radius, (0, 0, 255), 2)  
 
         # Display the updated image
         ax.imshow(img_overlay)
@@ -313,25 +339,25 @@ def detect_convexity(segmentation):
         hull_indices = cv2.convexHull(contours[0], returnPoints=False)
         defects = cv2.convexityDefects(contours[0], hull_indices)
 
-        depth_threshold = 10  # Minimum depth to consider a defect as large
+        depth_threshold = 5  # Minimum depth to consider a defect as large
         length_threshold = 10  # Minimum length of defect to consider
 
         if defects is not None:
             defects_new = []
             for i in range(defects.shape[0]):
-                s, e, f, d = defects[i, 0]
+                s, e, f, depth = defects[i, 0]
                 start = tuple(contours[0][s][0])
                 end = tuple(contours[0][e][0])
-                far = tuple(contours[0][f][0])
 
                 # Calculate the length of the defect
                 length = np.linalg.norm(np.array(start) - np.array(end))
-                
                 # Filter based on depth and length
-                if (d / 256.0) > depth_threshold and length > length_threshold:
-                    # print(f"Defect: depth={d / 256.0}, length={length}")
+                if (depth / 256.0) > depth_threshold and length > length_threshold:
                     defects_new.append(defects[i, 0])
     
+    if defects_new:
+        print(f"{len(defects_new)} large convexity defects found with (depth, length): {[(f'{defect[3] / 256.0:.2f}', f'{np.linalg.norm(contours[0][defect[0]][0] - contours[0][defect[1]][0]):.2f}') for defect in defects_new]}")
+
     return defects_new
 
 def check_convexity(segmentation):
@@ -339,16 +365,15 @@ def check_convexity(segmentation):
     if len(contours) > 0:
         hull_indices = cv2.convexHull(contours[0], returnPoints=False)
         defects = cv2.convexityDefects(contours[0], hull_indices)
-        depth_threshold = 10
+        depth_threshold = 5
         length_threshold = 10
         if defects is not None:
             for i in range(defects.shape[0]):
-                s, e, f, d = defects[i, 0]
+                s, e, f, depth = defects[i, 0]
                 start = tuple(contours[0][s][0])
                 end = tuple(contours[0][e][0])
-                far = tuple(contours[0][f][0])
                 length = np.linalg.norm(np.array(start) - np.array(end))
-                if (d / 256.0) > depth_threshold and length > length_threshold:
+                if (depth / 256.0) > depth_threshold and length > length_threshold:
                     return False
     return True
 
@@ -381,7 +406,7 @@ def show_convexity(segmentation, defects):
         plt.waitforbuttonpress()
         plt.close()
 
-def analyze_ball(best_candidate, image, masks):
+def analyze_ball(best_candidate, image, masks, show = False):
     segmentation = best_candidate['segmentation']
     
     cracks = detect_cracks(segmentation, image)
@@ -389,11 +414,12 @@ def analyze_ball(best_candidate, image, masks):
     deformities = detect_deformities(segmentation)
     convexity = detect_convexity(segmentation)
 
-    show_best_ball(image, best_candidate)
-    show_cracks(image, cracks)
-    show_contained_masks(image, contained_masks)
-    show_deformities(image, segmentation, deformities)
-    show_convexity(segmentation, convexity)
+    if show:
+        show_best_ball(image, best_candidate)
+        show_cracks(image, cracks)
+        show_contained_masks(image, contained_masks)
+        show_deformities(image, segmentation, deformities)
+        show_convexity(segmentation, convexity)
    
     return {
         "cracks": bool(cracks),
@@ -402,17 +428,21 @@ def analyze_ball(best_candidate, image, masks):
         "convexity": bool(convexity)
     }
 
-def analyze_masks(masks, image):
+def analyze_masks(masks, image, show = False):
     best_ball = select_best_ball(masks, image.shape[1], image.shape[0])
 
     if best_ball:
-        print(f"Best ball found: area: {best_ball['area']}, bbox: {best_ball['bbox']}, iou: {best_ball['predicted_iou']}, stability: {best_ball['stability_score']}")
-        
-        results = analyze_ball(best_ball, image, masks)
-        print(results)
+        # print(f"Best ball found.")
+        # print("area: ", best_ball['area'], "bbox: ", best_ball['bbox'], "iou: ", best_ball['predicted_iou'], "stability: ", best_ball['stability_score'])
+        results = analyze_ball(best_ball, image, masks, show)
+        # print(results)
         
         if results['cracks'] or results['deformities'] or results['contained_masks'] or results['convexity']:
-            print("Defects found.")
+            print("Defects found.", end=' ')
+            for key, value in results.items():
+                if value:
+                    print(f"{key}: {value}", end=' ')
+            print()
             return 0
         else:
             print("No defects found.")

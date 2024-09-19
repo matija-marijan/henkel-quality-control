@@ -2,3 +2,5 @@ dataset/
 model/
 __pycache__/
 izvestaj/
+FastSAM/
+results*
