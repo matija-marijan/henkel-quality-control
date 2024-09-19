@@ -41,7 +41,7 @@ for idx in range(len(dataset)):
     # plt.waitforbuttonpress()
     # plt.close()
     
-    # result = analyze_masks(masks, image, show = False)
+    # result = analyze_masks(masks, image, show = True)
     result = check_masks(masks, image)
 
     results.append((image_name, result))
